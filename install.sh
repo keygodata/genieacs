@@ -59,14 +59,34 @@ apt install -y nodejs
 node -v
 
 echo "Menginstal MongoDB..."
-curl -fsSL https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
-echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
-apt update
-apt install -y mongodb-org
+ubuntu_codename=""
+if [ -r /etc/os-release ]; then
+    ubuntu_codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}")"
+fi
+if [ -z "$ubuntu_codename" ] && command -v lsb_release >/dev/null 2>&1; then
+    ubuntu_codename="$(lsb_release -sc)"
+fi
+
+mongodb_major="4.4"
+if [ "$ubuntu_codename" = "jammy" ] || [ "$ubuntu_codename" = "noble" ]; then
+    mongodb_major="8.0"
+fi
+
+apt-get update -y
+apt-get install -y gnupg curl
+install -d -m 0755 /usr/share/keyrings
+curl -fsSL "https://www.mongodb.org/static/pgp/server-${mongodb_major}.asc" | gpg --dearmor -o "/usr/share/keyrings/mongodb-server-${mongodb_major}.gpg"
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-${mongodb_major}.gpg ] https://repo.mongodb.org/apt/ubuntu ${ubuntu_codename:-focal}/mongodb-org/${mongodb_major} multiverse" | tee "/etc/apt/sources.list.d/mongodb-org-${mongodb_major}.list" > /dev/null
+apt-get update -y
+apt-get install -y mongodb-org
 systemctl start mongod.service
 systemctl enable mongod
 
-mongo --eval 'db.runCommand({ connectionStatus: 1 })'
+if command -v mongosh >/dev/null 2>&1; then
+    mongosh --quiet --eval 'db.runCommand({ connectionStatus: 1 })'
+else
+    mongo --quiet --eval 'db.runCommand({ connectionStatus: 1 })'
+fi
 
 #GenieACS
 if !  systemctl is-active --quiet genieacs-{cwmp,fs,ui,nbi}; then
